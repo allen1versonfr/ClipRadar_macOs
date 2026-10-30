@@ -180,7 +180,8 @@ if shutil.which("ffmpeg"):
     px = np.frombuffer(raw, np.uint8).reshape(1920, 1080, 3).astype(int)
     yellow = (px[..., 0] > 200) & (px[..., 1] > 190) & (px[..., 2] < 90)
     rows = np.where(yellow.any(axis=1))[0]
-    check("the rendered title is yellow, and big", rows.size and rows.max() - rows.min() > 90 and yellow.sum() > 10000,
+    # > 75: capitals in Arial Black (Windows, Mac) are short for their font size in a subtitle, 83 px here
+    check("the rendered title is yellow, and big", rows.size and rows.max() - rows.min() > 75 and yellow.sum() > 10000,
           (int(rows.size), int(yellow.sum())))
     check(f"every preset renders with every caption style ({len(engine.CAPTION_MOTIONS) * len(engine.CAPTION_STYLES)} renders)", not bad, bad[:3])
 else:
