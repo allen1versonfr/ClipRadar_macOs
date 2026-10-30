@@ -15,8 +15,8 @@ INSTALL
   Privacy & Security, scroll down and press Open Anyway next to Clip Radar.
   (On macOS 14 and earlier, Control-click the app and choose Open instead.)
   FFmpeg, yt-dlp and TwitchDownloaderCLI come inside the app. If one is
-  missing, Clip Radar offers to download it, or uses the ones you installed
-  with Homebrew (brew install ffmpeg yt-dlp).
+  missing, Clip Radar offers to download it. (It can also use yt-dlp from
+  Homebrew, but Homebrew's FFmpeg can't draw captions, so use Clip Radar's.)
 
 UPDATES
   Clip Radar checks GitHub for a new version when it starts (and every few

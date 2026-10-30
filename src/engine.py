@@ -83,7 +83,7 @@ def which(name: str) -> Optional[str]:
     return shutil.which(name, path=os.pathsep.join(EXTRA_BIN))
 
 
-SETUP_HINT = ("Download it in Settings › Downloads and tools, or install it with Homebrew (brew install ffmpeg yt-dlp)"
+SETUP_HINT = ("Download it in Settings › Downloads and tools (Homebrew's FFmpeg can't draw captions)"
               if sys.platform == "darwin" else "Run install.bat")
 
 

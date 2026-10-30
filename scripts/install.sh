@@ -55,7 +55,9 @@ echo "  [3/5] Installing captions (Whisper). First time takes a few minutes..."
 mkdir -p tools
 NEED=""
 if [ ! -x tools/ffmpeg ] || [ ! -x tools/ffprobe ]; then
-  if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+  # Homebrew's FFmpeg has no libass (the 'subtitles' filter), so it can't draw captions: get our own then
+  if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1 && \
+     ffmpeg -hide_banner -filters 2>/dev/null | grep -q " subtitles "; then
     echo "  [4/5] FFmpeg found ($(command -v ffmpeg))."
   else
     NEED="$NEED ffmpeg"

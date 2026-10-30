@@ -39,8 +39,15 @@ jobs:
       - name: Install packages
         run: python -m pip install -U pip && python -m pip install -r requirements.txt pywebview
 
-      - name: Get FFmpeg (Homebrew) for the tests that cut video
-        run: brew install ffmpeg
+      # the same FFmpeg the app ships and downloads (Homebrew's has no libass, so no 'subtitles' filter:
+      # captions can't be drawn with it). This also checks the Mac download sources still work
+      - name: Get FFmpeg the way the app does
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python src/tools_setup.py --dest tools ffmpeg
+          tools/ffmpeg -hide_banner -filters | grep -q " subtitles " || { echo "::error title=ffmpeg::no subtitles filter"; exit 1; }
+          echo "$PWD/tools" >> "$GITHUB_PATH"
 
       - name: Unit tests
         env:
