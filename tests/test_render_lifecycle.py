@@ -139,15 +139,8 @@ def ffmpeg_children():
               "ForEach-Object { $_.ProcessId.ToString() + ' ' + $_.CommandLine }")
         p = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=60)
         return [ln.split()[0] for ln in p.stdout.splitlines() if ln.strip() and os.path.basename(TMP) in ln]
-    out = []
-    for pid in os.listdir("/proc") if os.path.isdir("/proc") else []:
-        try:
-            cmd = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="replace")
-        except OSError:
-            continue
-        if "ffmpeg" in cmd and TMP in cmd:
-            out.append(pid)
-    return out
+    p = subprocess.run(["ps", "-axww", "-o", "pid=,command="], capture_output=True, text=True, errors="replace", timeout=60)
+    return [ln.split()[0] for ln in p.stdout.splitlines() if "ffmpeg" in ln and TMP in ln]
 
 
 # 1. a good render, every stage in order, a percentage only while encoding
