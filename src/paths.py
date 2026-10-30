@@ -11,6 +11,15 @@ FROZEN = bool(getattr(sys, "frozen", False))
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
 
+# python.org's Python and the built app can't see the Mac's certificates, so HTTPS without certifi's list
+# fails with CERTIFICATE_VERIFY_FAILED
+if IS_MAC and not os.environ.get("SSL_CERT_FILE"):
+    try:
+        import certifi
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+    except ImportError:
+        pass
+
 # Clip Radar was called VodClipper before 4.0. Settings made for the old name keep working.
 OLD_NAME, DATA_NAME, CLIPS_NAME = "VodClipper", "ClipRadar", "Clip Radar"
 for _k, _v in list(os.environ.items()):

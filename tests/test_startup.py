@@ -36,6 +36,10 @@ def check(name, ok, detail=""):
         failures.append(name)
 
 
+if sys.platform == "darwin":
+    import ssl
+    check("HTTPS works without an explicit certificate list", ssl.create_default_context().cert_store_stats()["x509_ca"] > 0)
+
 HEAVY = ("faster_whisper", "ctranslate2", "yt_dlp", "onnxruntime", "av")
 check("importing the server loads none of the heavy packages", not [m for m in HEAVY if m in sys.modules],
       [m for m in HEAVY if m in sys.modules])
