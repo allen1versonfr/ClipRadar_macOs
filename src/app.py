@@ -10,13 +10,18 @@ If that isn't available it falls back to your normal browser.
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import sys
 import threading
 import time
 import webbrowser
 
-import paths
+# in the built app, a helper multiprocessing starts (tqdm's lock, under Whisper, starts one) re-runs this
+# program: this turns it back into that helper, before anything below opens a second Clip Radar
+multiprocessing.freeze_support()
+
+import paths  # noqa: E402
 
 paths.ensure_dirs()
 _fixed_paths = paths.fix_moved_paths()        # upgraded from VodClipper: saved paths follow the moved folders
@@ -242,6 +247,15 @@ def selftest(out_json: str, media: str = "") -> int:
             rec(f"tool {tool}", True, f"{exe} | {first[0] if first else 'ran'}")
         except Exception as e:
             rec(f"tool {tool}", False, e)
+
+    if paths.FROZEN and sys.platform != "win32":
+        from multiprocessing import resource_tracker
+        resource_tracker.ensure_running()
+        time.sleep(5)
+        helper = str(resource_tracker._resource_tracker._pid)
+        p = subprocess.run(["/usr/sbin/lsof", "-nP", "-a", "-p", helper, "-iTCP", "-sTCP:LISTEN"], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL)
+        rec("multiprocessing helper isn't a second app", not p.stdout.strip(), p.stdout.strip()[-200:] or f"pid {helper}")
 
     rec("ui bundled", (paths.RES_DIR / "ui" / "index.html").is_file(), paths.RES_DIR)
     rec("new ui bundled", (paths.RES_DIR / "web" / "index.html").is_file(), paths.RES_DIR)      # the UI at / since 4.25.0
