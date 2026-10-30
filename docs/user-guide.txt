@@ -1,0 +1,531 @@
+Clip Radar
+==========
+Turns a Twitch VOD into vertical TikTok clips. It finds the best moments,
+lets you review and trim them, then renders 1080x1920 MP4s with captions.
+Everything runs on your own Mac.
+
+INSTALL
+  Download the disk image for your Mac from the Releases page of
+  github.com/allen1versonfr/ClipRadar_macOs:
+    ClipRadar-macOS-arm64.dmg    Apple silicon (M1 and later)
+    ClipRadar-macOS-x86_64.dmg   Intel Macs
+  Open it and drag Clip Radar to Applications. macOS 11 (Big Sur) or later.
+  The first time you open it, macOS may say it can't check the app for
+  malicious software (the app isn't notarized yet): open System Settings >
+  Privacy & Security, scroll down and press Open Anyway next to Clip Radar.
+  (On macOS 14 and earlier, Control-click the app and choose Open instead.)
+  FFmpeg, yt-dlp and TwitchDownloaderCLI come inside the app. If one is
+  missing, Clip Radar offers to download it, or uses the ones you installed
+  with Homebrew (brew install ffmpeg yt-dlp).
+
+UPDATES
+  Clip Radar checks GitHub for a new version when it starts (and every few
+  hours). When there is one, "Update to x.y.z" appears in the status bar.
+  Settings > Updates shows what's new; Update now downloads it, closes
+  Clip Radar, replaces the app and opens Clip Radar again. Your clips,
+  projects and settings are kept. This works when Clip Radar is in your
+  Applications folder (not run from the disk image). Turn off "Check for
+  updates automatically" there if you prefer to check yourself.
+  Settings > Updates > All versions lists every version with what changed.
+  If Clip Radar's GitHub repository is private, the updater needs a read-only
+  access token: Settings > Updates > Private repository explains how to make
+  one. It's stored encrypted, with a key kept in your Mac's Keychain.
+
+WHERE THINGS ARE
+  Clips and projects   ~/Movies/Clip Radar
+  Settings, tools,     ~/Library/Application Support/ClipRadar
+  models and logs
+
+UNINSTALL
+  Quit Clip Radar and drag it from Applications to the Trash. To remove its
+  settings, downloaded tools, caption models and logs too, delete
+  ~/Library/Application Support/ClipRadar (in Finder: Go > Go to Folder).
+  Your VODs and clips in ~/Movies/Clip Radar are kept until you delete them.
+
+BUILD IT YOURSELF (optional)
+  Every push to the repo builds and tests the app on macOS for both chips
+  (GitHub Actions), and every new version publishes it as a release. To build
+  on your own Mac instead, run scripts/build_app.sh from the source code.
+
+USE
+  Clip Radar has four sections in the left sidebar: Home, Review, Exports and
+  Settings. The status bar at the bottom shows what's running in the background.
+
+  Home: start a project
+    Past broadcast   paste a link or Browse to a video on your Mac, then Find
+                     clips. Links can be a Twitch VOD (twitch.tv/videos/...), a
+                     YouTube video, Short or finished livestream, or an X post
+                     with a video. Clip Radar says what the link is first
+                     (an ordinary video, a finished livestream, or one that's
+                     live now) and explains in plain words when it can't be
+                     used: private, age-restricted or members-only (choose
+                     your browser under Advanced > Sign in with), removed,
+                     not available in your country, or a post with no video.
+                     A finished YouTube livestream brings its chat replay, so
+                     chat counts like it does for Twitch (YouTube emoji
+                     included). An ordinary YouTube video has no chat, so Clip
+                     Radar reads what YouTube knows about it: the Most replayed
+                     graph (where viewers rewatch), timestamps in the top
+                     comments ("3:45 when he fell": many people pointing at a
+                     moment lifts it, and their words can title the clip, shown
+                     as Comments: "..."), chapters, and YouTube's own captions,
+                     which title clips straight away without waiting for
+                     Whisper. Each clip's reason says which of these it came
+                     from. A link with a start
+                     time (?t=1m30s) opens the preview there. Each clip has a
+                     link back to that moment in the original (Clip tab, and
+                     Copy source link in Exports) for crediting the source.
+                     Clips to suggest and Clip length are Automatic by default:
+                     the number scales with how long the stream is and how much
+                     happened, and each clip gets its own length (15-90 s).
+                     Deep scan (optional) also transcribes the whole stream to
+                     find quiet gems (see below).
+    Live stream      enter a Twitch channel (twitch.tv/name) or a YouTube
+                     livestream link and press Start live clipping while the
+                     stream is on air. A YouTube livestream's chat is read too
+                     (through yt-dlp), the same way as Twitch chat.
+    Running now      every video being opened and every stream being clipped,
+                     with its progress. Open, Pause (Resume carries on where the
+                     download stopped), Cancel or Stop each one by itself; one
+                     failing doesn't affect the others. You can open another
+                     video while one is still being opened, and clip up to
+                     three streams at once (Settings > Performance > Live
+                     streams at once; two by default). Each source keeps its
+                     own folder, chat, captions and clip numbers.
+
+  Review: decide what to keep
+    The suggested clips are listed on the left. The middle shows the selected
+    clip exactly as the TikTok will look (layout, title, word-by-word captions).
+    The inspector on the right has four tabs:
+      Clip       title, post caption and trim
+      Captions   every caption line with its time. Click a line to jump to it,
+                 type over it to fix a word (Enter to save), x to delete it,
+                 or Add caption at playhead to write your own. Undo all edits
+                 brings back what Whisper heard.
+      Text       caption style (Pop, Highlight, Karaoke, Glow, Clean), title
+                 style (white, dark or colour box, outline), fonts, size and
+                 highlight colour
+      Layout     shape (vertical 9:16, square 1:1, wide 16:9), cam + game,
+                 whole frame, cam only or blur fit, facecam box, focus, zoom,
+                 follow the streamer's face, saved framings
+    Drag the title or the captions on the preview to move them; a line shows
+    when they're centred, and the shaded areas are covered by TikTok's own
+    buttons. Text > Reset positions puts them back.
+    The hype timeline along the bottom shows the whole stream; click a
+    highlighted range to jump to that clip, or (for VODs) click anywhere else to
+    preview that moment and make a clip there.
+      Keep and render (Enter)   renders it in the background
+      Skip (X)                  sets it aside (Skipped tab)
+    The header shows how many strong moments the stream has (for example
+    "about 21 strong moments in this 7-hour stream"). What you keep, skip and
+    post teaches Clip Radar what you like for each streamer; after about eight
+    decisions the header says "Tuned to your picks" (Settings > Clip ranking).
+    Gems tab (after a Deep scan): quiet gems, lines that landed (the streamer
+    laughed after, chat reacted, the voice changed, a punchline) even though
+    chat and volume stayed calm. Deep scan can also be started from the
+    header, and you can keep reviewing while it runs.
+      Up / Down arrows          previous / next clip
+      Space play/pause, T new title, M mute, Left/Right seek, C clip (live)
+    Editing timeline (under the player): the clip's stretch of the stream
+    with its sound, captions, laughter, screams and cheers, chat activity and
+    content check flags. Drag the clip's edges to trim (they snap to word
+    edges; hold Alt to stop that), click to jump, scroll to move along and
+    Ctrl or ⌘ + scroll (or - Fit +) to zoom. Times are stream times.
+    Trim in the Clip tab by a second (-1s/+1s) or a single frame (-1f/+1f), or
+    press I and O to start or end the clip at the playhead. Restore original
+    cut goes back to the cut Clip Radar found. Undo and Redo (⌘Z,
+    ⌘⇧Z) cover trims, titles, post captions and caption edits.
+    Frame back/forward (, and .), playback speed (< and >), and ? shows every
+    shortcut.
+    Exact preview renders a few seconds around the playhead exactly like the
+    export (captions, title, censoring, shape), without exporting the clip.
+    Each clip has a number (#7) that stays with that moment, even when you
+    change the sliders. Clips you kept, skipped, trimmed or retitled never drop
+    out of the list. Your review is saved as you go: open the same VOD again
+    (Recent on the Home screen) and everything is where you left it.
+
+  Live mode
+    Pick a mode on the Home screen:
+      Hands-free         every moment is titled, checked and rendered by itself
+                         with your Text and Layout style. Finished clips appear
+                         in Exports while you watch. (Moments the content check
+                         flags as serious are held back for you in Review.)
+      Review each clip   moments wait in Review; you keep the ones you want.
+    How many clips: Fewer, Normal, More or Lots. Lowest score: moments under
+    it aren't clipped (50 is a clear moment, 75 a strong one). You can change
+    both while live.
+    While live, the line under the header shows a moment as it forms, how
+    late chat reacts (worked out from the stream unless you set Chat delay),
+    how long each step takes and about how many seconds after something
+    happens its clip is ready, and how many moments were passed on (hover
+    for why: under your lowest score, only one or two people in chat,
+    unlike your picks, or a repeat of a moment already clipped).
+    If chat disconnects or goes quiet, moments are found from the stream's
+    sound until chat is back. When several moments wait to be captioned or
+    rendered, a clip you asked for goes first, then the strongest.
+    Wait for the stream to start: start before the channel goes live and
+    recording begins by itself. Keep watching: after the stream ends,
+    Clip Radar waits for the channel's next stream and starts again.
+      Control+Option+C    clip the last 30 seconds from ANY app (a sound
+      (⌃⌥C)               confirms it) while Clip Radar's window is open.
+                          Turn it off in Settings > Live clipping.
+      Clip last 30s (C)   the same, from inside Clip Radar
+      Stop                stop recording; you can keep reviewing afterwards
+    Only the last 15 minutes of raw stream are kept on disk; moments are cut out
+    as they happen, so long streams don't fill your drive. If the connection
+    drops it reconnects, and it notices when the stream ends.
+    Ads: Twitch stitches ads into live streams for viewers without Turbo.
+    Clip Radar recognises those ad breaks and leaves them out of the recording,
+    so they never end up in a clip (the header shows "Ads skipped"). Sign in
+    under Settings > Twitch sign-in with an account that has Turbo (or a sub to
+    the channel) and Twitch sends the ad-free stream instead.
+
+  Exports: finished clips and posting
+    Every kept clip renders here, named after its title, with its post caption
+    saved next to it as a .txt. Select one to watch it and post it to TikTok.
+    If a clip fails to render, its row says why (for example "your drive is
+    full") and what to do, with a Retry button. Retry failed retries them all.
+    A retry replaces its own file instead of making a "(2)" copy, and every
+    finished file is checked before it shows as done. Exports and any renders
+    that hadn't finished are kept when you close Clip Radar; unfinished
+    renders start again the next time you open it. Clear queue takes every
+    clip off the list (the files stay in your clips folder) and cancels the
+    ones waiting to render; a clip rendering right now finishes.
+
+CONTENT CHECK (Settings > Content check)
+  Checks what each clip says, its title and its post caption for things that
+  get TikTok videos removed or held back: hate slurs, self-harm and
+  harassment, personal info (phone numbers, emails, street addresses),
+  violence, sexual terms, drugs, swearing, gambling, and your own blocked
+  words (your real name, your town...). Flags show on each clip.
+  When something is flagged: just flag it, hide it in captions ("f***"),
+  mute it, or bleep it. Choose which kinds get censored in the Censor column.
+  It reads words only. It can't see the picture or recognise music.
+
+  Reviewing flags
+    A flagged clip shows a Content check box in Review, listing each flag
+    with what was said and when (click the time to hear it). For each flag:
+      Mute it / Bleep it      silence or bleep just those words when it renders
+      End the clip before it / Start the clip after it   move the cut
+      Hide it in the title    replace the words with stars
+      Dismiss                 a false alarm, or not a problem for you
+    A fix explains what it will change first; Preview plays it, and Undo fix
+    takes it back. Your video itself is never changed.
+    For the whole clip: Leave as is (keep it exactly as it is), Review and
+    edit (jumps to the words in the Captions tab), Exclude from export (stays
+    in the project but won't render until you include it again), and
+    Remove (takes it out of the project for good; Undo brings it back).
+    Every clip gets a status: Needs review, Reviewed, Corrected, Dismissed
+    or Excluded from export. The Flagged tab lists flagged clips with a
+    status filter and Leave all / Dismiss all / Exclude all / Mute all /
+    Bleep all. Mute all and Bleep all (also on each clip) silence or bleep
+    every flagged word that's said; flags in a title or post caption stay for
+    you. Each one can be undone on its own.
+    The check knows ordinary words and phrases that only look like a flag
+    ("spicy", "Suicide Squad", "terrorists win", inventory "slots"), catches
+    swear words Whisper wrote with stars ("f***") and phone numbers said one
+    digit at a time.
+    A decision sticks to that flag: it doesn't come back by itself, but it
+    does if the words change, if you press Check again from scratch, or if
+    you change what the check looks for. History on each clip lists what was
+    decided. Decisions are saved with the VOD.
+    Dismissing or leaving a flag never means a clip is safe. This is
+    Clip Radar's own check, not TikTok's decision.
+
+  Settings for reviewing
+    Sensitivity: Everything, Skip mild (no swearing or gambling) or Only
+    serious. Check clips by themselves (or press Check now on each clip).
+    Show flags right away, or collect them in the Flagged tab. Rendering a
+    clip with flags you haven't reviewed: Ask me first, Not until reviewed,
+    or Just render it. Remember flags I dismiss. Check a clip again after I
+    edit or fix it.
+
+  Auto titles and captions
+    Clip Radar listens to each clip (Whisper) and reads how chat reacted, then
+    writes two titles:
+      A  the best line said near the peak, or a short line about how chat
+         reacted (laughing, hyped, shocked...)
+      B  the same idea with the streamer's name worked in
+    Both show under the title box; click one to use it. The refresh button
+    (or T) cycles through more ideas, and you can type your own. Titles only
+    describe what's in the clip: what was said and how chat reacted.
+    The streamer's name comes from the chat replay; "Add the streamer's name"
+    (or "change") sets how it's written, for example JasonTheWeen.
+    The post caption is written separately from the title, with up to five
+    hashtags that fit the clip. The Hashtags switch under it turns tags off
+    for every clip. Settings > Titles and captions picks which title new clips
+    use (A or B) and whether to add hashtags.
+    Titles from what chat said: when at least three different chatters type
+    the same short phrase about a moment, it's offered as a title, shown as
+    Chat: "...". One viewer spamming, emote walls, F's, links, numbers and
+    usernames never count, and a strong line said on stream still comes first.
+
+POSTING TO TIKTOK
+  You post in TikTok Studio, TikTok's own upload page; nothing to set up.
+  In Exports, select a clip, check the caption, and press Open in TikTok
+  Studio. The caption (with your post hashtags) is copied, the video is
+  selected in Finder so you can drag it into the page, and TikTok
+  Studio opens in your browser. Finish uploading and posting there.
+  Clip Radar can't see your browser, so it only says it opened TikTok Studio,
+  never that a clip was posted.
+
+HASHTAGS
+  Settings > Hashtags has two separate lists:
+    In file names: the real tag text, # included, added to each exported
+    file's name, like Chat lost it #KaiCenat #Mafia #TwitchClips.mp4. The
+    streamer's own tag, your tags for that streamer (one per line,
+    "Kai Cenat: #KaiCenat #Mafia"), then your general tags, no repeats, up
+    to the number you set. Long names drop tags from the end first. A retry
+    keeps the same name.
+    In post captions: Clip Radar's tags for each clip (platform, streamer,
+    mood), your tags for every post, for a streamer and for each platform.
+  The preview shows both for any streamer name.
+
+STORAGE FOLDERS
+  Settings > Storage lists where each kind of file goes, with the free space
+  on its drive. Change… picks another folder; Default goes back.
+    Projects                 a folder per video: your review, analysis,
+                             transcripts and thumbnails
+    Downloaded videos        downloaded VODs and videos (default: inside each
+                             project folder)
+    Rendered clips           finished clips (default: a "tiktok" folder inside
+                             each project folder)
+    Temporary files          exact previews, framing data and the live
+                             recording buffer. Clear empties it; it never
+                             touches your videos, projects or clips.
+    Logs                     clipradar.log, and errors.jsonl (every failure)
+  A folder is checked before it's used (it must exist or be creatable, and be
+  writable). New work goes to the new folder; nothing already saved is moved,
+  and projects in a previous Projects folder still show up. A folder on a
+  drive that isn't plugged in falls back to the default until it's back, and
+  Clip Radar says so. Downloads stop before starting if the drive is too full,
+  and a second render at once waits while memory is short.
+
+FREEING UP SPACE
+  Downloaded VODs are big (several GB per stream). Settings > Storage shows
+  how much space Clip Radar is using:
+    Delete VODs       removes downloaded streams (and their chat/thumbnails).
+                      Your rendered clips are kept. Videos of your own that you
+                      opened with Browse are never deleted.
+    Delete all clips  removes every rendered TikTok clip. VODs are kept.
+  Both ask for confirmation first.
+  Clean up automatically: old temporary files (on); a hands-free clip's file
+  when you skip it (off); and a downloaded VOD once you're finished with it
+  (off): every clip kept or skipped, every kept clip rendered, nothing waiting
+  or failed, and not opened for the days you choose. Rendered clips and your
+  review are never removed. The last run, and anything it couldn't remove,
+  shows there.
+
+HOW CLIPS ARE PICKED
+  Every second of the stream gets a score from several signals, each measured
+  against what's normal for this stream (so big and small channels are judged
+  against themselves):
+  - Chat: sudden surges in how many people are chatting, weighted for KEKW,
+    LUL, POG, "clip it", ????? and similar, and how fast it speeds up. It counts
+    chatters, not messages (one person spamming counts once), and ignores bots,
+    !commands and giveaway entries, sub and gift-sub notices, copypasta, and the
+    floods after gift bombs and raids.
+  - Emotes: waves of 7TV, BetterTTV and FrankerFaceZ emotes (and Twitch ones)
+    from many chatters at once. The channel's emote names are downloaded and
+    cached for a day (Advanced > Recognise emotes); without them it carries on.
+  - Audio: moments much louder than the few minutes around them. Twitch's
+    muted (DMCA) sections are ignored instead of counted as boring. A sudden
+    reaction right after a quiet stretch counts extra; a short loud blip that
+    nobody reacted to (a door, an alert sound) counts less.
+  - Laughter, screams and cheering, heard by a small built-in sound detector
+    (Advanced > Listen for laughter, on by default; it adds about a minute per
+    hour of video). Loud music counts for less.
+  - Chat delay: chat reacts a few seconds late. Clip Radar works out how late
+    from the stream itself (leave Advanced > Chat delay empty), or uses the
+    number you type.
+  - Where a clip starts and ends: far enough back to show the setup (and,
+    when chat reacted late, what it was reacting to), on until the reaction
+    dies down, and moved to the nearest pause between sentences once the clip
+    has been listened to. Two detections of the same moment become one clip.
+  - Stream type (Gaming, IRL / Just Chatting, Reactions, Interviews, Podcasts
+    or Any stream) changes how much each signal counts and the clip lengths.
+    How many moments (Fewer, Normal, More) sets how strong a moment has to be.
+    Shortest and longest clip are under Advanced.
+  - Your own keeps, skips and posts, per streamer, and where you trim clips:
+    after five trims, new clips start and end where you usually move them to
+    (Settings > Clip ranking, where you can also make it forget).
+  - With no chat log it ranks by audio and the sound detector only.
+  - Local video? Put its chat next to it as <videoname>.chat.json, or choose
+    the file under Home > Past broadcast > Advanced. TwitchDownloader chat JSON works.
+
+  Scores and settings
+    Every clip gets a score from 0 to 100 (50 is a clear moment, 75 a strong
+    one) and a breakdown of what made it: chat, volume, laughter, emotes and so
+    on. Scores rank moments within one stream; they can't promise views. 90+
+    is kept for the stream's best few (at most 5) and 75+ for its top quarter
+    (at most 20), so a long stream with 60 clips doesn't grade them all 90+.
+    The detection button in the Review header shows the settings in use. Click
+    it to change them: Try shows how many clips would be new, dropped or the
+    same before you apply anything, and clips you kept, skipped, trimmed or
+    added stay either way. The settings are saved with the VOD.
+    After you skip a clip, you can say why (not interesting, bad cut,
+    duplicate, just noise). Settings > Clip ranking shows how many suggestions
+    you keep, why you skip, and how many moments you had to add by hand.
+    What it learned (per streamer) shows exactly what's stored, how the clips
+    you kept differed from the ones you skipped, what ranking moves up or down
+    because of it, and the rules every clip is scored on. The learning is a
+    small statistical model worked out on your Mac, not an AI, and it says when
+    it doesn't have enough decisions yet.
+  - A wave of "F" (or o7, or poll votes like "1") counts for nothing: it says
+    something happened, not what, and can't make a clip on its own.
+  - Keep the top (To review list): keep and render the top 3, 5, 10, 15, 20
+    or all clips in one go, in the order shown, with your export settings.
+    Clips with content flags to review are left for you.
+  - Skip (To review list): skip every clip left in the list, or only those
+    scored under 40, 50, 60 or 75. Clips you made yourself stay. Undo brings
+    them back, and skipped clips can still be kept from the Skipped tab.
+  - Clips to suggest goes from 5 to 60 in steps of 5, then up to 100. You get
+    the number you asked for; when a video doesn't have that many separate
+    moments, Clip Radar says so.
+
+FRAMING
+  Layout > Auto-frame looks at a few frames of the video and picks a layout:
+  a face that sits still in a corner is a facecam (Cam + game, with the box
+  drawn around the camera), a person filling the frame is followed (Whole
+  frame), and with no face it shows the middle of the frame. Check the box
+  it draws; you can always drag your own.
+  Follow the streamer's face (Whole frame layout): the crop moves with the
+  face, smoothly and never faster than a slow pan, ignores small wobbles and
+  one-off misdetections, and holds still while the face is hidden for a
+  moment. It moves to someone else only once the person it follows has been
+  gone for a second and a half. If the face is gone for longer it eases back to Focus. If a face is
+  only seen now and then, or the only face is a facecam overlay, the crop
+  stays at Focus. Who to follow: automatic (the biggest face, or two people
+  together when they fit in the frame side by side), the left-most
+  or right-most person, or the one nearest a focus point you set. Captions in
+  the automatic position move off the face. The preview moves the crop the
+  same way, and the exact preview shows the real render.
+  Cam only fills the frame with the facecam. Two or more people on camera?
+  Add a facecam (up to four) and drag a box around each: in Cam + game they
+  sit side by side above the game, in Cam only one above the other. Saved
+  framings keep a layout, the facecam boxes, focus, zoom and follow settings
+  to reuse in one click.
+
+  Clips that are already cut
+    Home › The video is › "Already a clip" opens the whole video (up to 15
+    minutes) as one clip in Review: add captions, pick a layout, Keep and
+    render. "Automatic" does this by itself for an X video under 3 minutes
+    with no chat; pick "A stream or long video" to find moments in it instead.
+  Faces are found by a small built-in detector (UltraFace, MIT licence); it
+  reads a few small frames per second, so following adds a few seconds to a
+  render.
+
+CAPTIONS
+  Made with Whisper. The first render with captions downloads the model
+  (a few hundred MB). "Balanced" accuracy is a solid default. With an NVIDIA GPU and
+  CUDA 12 + cuDNN installed, Whisper uses the GPU; otherwise the CPU.
+  Rendering uses your GPU's video encoder (NVIDIA, Intel or AMD) when it can,
+  and falls back to the CPU on its own.
+  Whisper is told the streamer's name, the channel's emotes and your own
+  list (Settings > Caption words > Words to recognise), so they're spelled
+  right. Lines it invents over silence or music ("thanks for watching") are
+  dropped. Replace words swaps a word everywhere in captions (leave the
+  replacement empty to remove it); timing stays the same.
+  Titles: White box, Dark box, Color box, Outline (pick its text colour) and
+  Yellow on black (yellow text, black border); Border sets how thick the
+  outline is, and Size goes up to 300% (captions up to 250%).
+  Spelling: under a title or post caption, Clip Radar points out common
+  mistakes and chat-style typing ("dont", "teh", a lone "i") with a Fix
+  spelling button; titles from chat come out fixed. The boxes you type in
+  also underline anything else misspelled (right-click for suggestions).
+  The Text tab has Outline and Shadow sliders, Templates (Signature yellow,
+  Karaoke, Boxed, Bold bounce, Clean subtitles, Word by word), and Saved
+  styles: save the look of your captions and title, then apply it to any clip
+  in one click. Reset to default puts the style back without moving anything.
+  Animation: pop in, word pop, bounce, fade in, slide up, word by word, or
+  none, with a speed setting. Highlight strong words keeps words like "no
+  way" and shouting in your highlight colour. Keep "um" and "uh" and Keep
+  punctuation can be turned off; the timing of the other words doesn't change.
+  Line spacing spreads the two lines of a long caption apart. Timing moves
+  every caption earlier or later (up to a second) if they don't line up with
+  the voice.
+  Show what TikTok covers shades the parts TikTok's buttons, caption and top
+  bar sit on, so you can keep text clear of them.
+
+EXPORT FORMAT
+  Settings > Export format picks a preset: TikTok, YouTube Shorts, Instagram
+  Reels or X. Each sets the size, quality, sound and the longest
+  clip the platform takes (a longer clip gets a warning in Exports). The
+  platforms change their limits now and then, so treat these as starting
+  points. Advanced changes resolution, frame rate, codec (H.264, H.265, or
+  VP9 in a .webm), quality or bitrate, audio bitrate and container; Reset
+  goes back to the preset. The shape (9:16, 1:1, 16:9) stays in the Layout tab.
+  Captions: burned in, burned in plus a .srt file, or only a .srt file.
+  Sound: every clip is evened out to the preset's loudness (-14 LUFS by
+  default, or left as is). Reduce background noise and Clearer voice are
+  optional. A clip that comes out without sound is rendered again; one that
+  comes out almost silent gets a warning.
+  File names: a template such as {streamer} - {number} - {title}, with
+  {platform}, {source}, {date}, {hashtags}, {project} and {preset} too.
+  Empty fields drop out, and characters that can't be in a file name are removed.
+  The same clip sent twice (a double click) renders once.
+  Quality: Fast export (about a third quicker, up to 30 FPS), Balanced
+  (recommended) and High quality (sharper, about 1.5 times as long to render).
+  Balanced and High keep the stream's own frame rate, up to 60. A 30 FPS
+  stream is never turned into 60: that would only repeat frames, not add
+  motion.
+  Watermark: up to 6 layers, each text or an image. Text layers have a font,
+  colour, outline or a box behind them (in any colour). Every layer has a
+  place (a corner, the centre, or Anywhere: drag it on the clip preview in
+  Review), size, opacity, rotation, distance from the side, and when it
+  appears and disappears. Only exports get it; your videos aren't changed.
+  Corners sit below TikTok's top bar or above its caption area.
+  Save as... keeps a set of layers under a name. Share... saves one file
+  with the layers and their images (in the projects folder's Shared folder)
+  to drop into Discord. Import... and From link... bring in a watermark or
+  campaign file, or a logo image, from your Mac or a Discord link.
+  Volume (Clip tab): make one clip quieter or louder than the rest.
+  A sound plays when you add a clip to the render queue and when it's ready.
+
+CAMPAIGNS (CLIPPING ORGANISATIONS AND DISCORDS)
+  Settings > Campaigns keeps each clipping campaign's rules together:
+  - the text every post must carry (an @handle, a code, #ad), at the end or
+    the start of the post caption, and hashtags it must carry (added on top
+    of yours and never left out);
+  - the shortest and longest clip it accepts (clips outside get a warning in
+    Exports);
+  - its own watermark (Copy my current watermark, then edit it under Export
+    format > Watermark while the campaign is active);
+  - its Discord channel: paste the channel's webhook link (channel settings >
+    Integrations > Webhooks > Copy webhook URL) and press Test.
+  Pick the Active campaign: clips you keep from then on follow its rules, and
+  Exports shows which campaign is active. In Exports, Submit to <campaign>
+  sends a finished clip to its Discord channel: the video (up to 10 MB) until
+  you paste the link to your post, then the link. Or turn on Send each clip
+  as soon as it renders. The message can use {title}, {caption}, {post_url},
+  {campaign}, {source} and {file}; it never pings anyone.
+  Share... saves the campaign as one file (rules and watermark) to hand to
+  clippers. The webhook is left out unless you tick Include the webhook:
+  anyone with it can post in that channel.
+
+PERFORMANCE
+  Settings > Performance sets how many clips render at once (1-3) and how
+  many VODs download at once (1-2). Keep the Mac responsive renders at lower
+  priority and leaves one CPU core free; Finish faster uses everything.
+  Time left shows in Exports, on Home and in the status bar. It's based on
+  how fast this Mac rendered before, so the first render's estimate firms up
+  after a few seconds.
+
+TROUBLESHOOTING
+  - Twitch downloads suddenly fail: Settings > Downloads and tools > Update downloader.
+    No rebuild needed.
+  - Subscriber-only VOD: sign in under Settings > Twitch sign-in. (Or, the older
+    way: Settings > Downloads and tools > Use cookies from > the browser where
+    you're logged in to Twitch; close that browser first.)
+  - Ads still pause live recordings: that's expected without Turbo or a sub;
+    the ads are left out of the clips either way.
+  - The window doesn't open: Clip Radar falls back to your web browser.
+    Start it again; if it keeps happening, send the log (below).
+  - Preview won't play: some files (MKV, HEVC) can't play in the preview.
+    Finding and rendering clips still works.
+  - Something else broke: send the log files at
+    ~/Library/Application Support/ClipRadar/clipradar.log and errors.jsonl. errors.jsonl
+    lists every failure with what Clip Radar was doing (Settings › About ›
+    Error log: Open logs folder, or Copy recent errors).
+
+Only clip VODs you own or have permission to repost.

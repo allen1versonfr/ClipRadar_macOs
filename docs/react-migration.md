@@ -1,0 +1,163 @@
+# Moving the UI to React
+
+What the server already does for a React UI, and the contract the new UI has to keep so the
+tests, the app window and updates keep working. Written alongside
+[the readiness audit](audits/react-readiness-2026-10-22.md).
+
+## Where things live
+
+| Path | What |
+|---|---|
+| `web/` | The React app's source: Vite, React 19, TypeScript (strict), Zod. Unit tests with Vitest (`npm test`). |
+| `src/web/` | Its build output (`npm run build`). Git-ignored; CI and `build_exe.bat` build it. |
+| `src/ui/` | The original page. Stays shipped and is always served at `/legacy/`. |
+| `src/ui/fonts/`, `src/ui/icon.*` | Shared: the React app loads Inter and caption fonts from `/ui/fonts/…` instead of bundling a second copy. |
+
+### Which UI is where
+
+Since 4.25.0 **the React app is at `/`** (`REACT_IS_DEFAULT = True` in `src/server.py`), after the audit in
+`docs/audit-new-ui.md`. The original page is the "Previous UI":
+
+- `/legacy/` always serves the original page; its top bar has "Back to the new UI". Without a React build
+  (running from source without `npm run build`), the original page is at `/` too.
+- `/next/` still serves the React app (its address before 4.25.0).
+- `CLIPRADAR_UI=web` serves it at `/` and refuses to fall back to the original page.
+- `CLIPRADAR_UI=legacy` turns the React build off entirely, `/next/` included (CI runs `test_ui.py` that way too).
+- `/api/status` reports `"ui"` (what's at `/`: `"web"` or `"legacy"`), `"next"` (whether `/next/` works) and `"api": 1`.
+
+Screens switch by `#hash` (`/next/#exports`), so the app needs no router and works the same at `/next/` and
+at `/`, and a reload keeps the screen.
+
+When the build is served, the server answers:
+
+- `/assets/*` from `src/web/assets/`, cached forever (`immutable`): Vite's file names are content hashes.
+- In web mode, other files at the top of `src/web/` as they are, and any other path without a file extension
+  with `index.html`.
+- `/api/*`, `/files/*`, `/vod/*`, `/export/*`, `/wmimg/*`, `/ui/*`, `/legacy/*` exactly as before.
+
+`.js`/`.mjs`/`.css`/fonts/`.wasm` are served with fixed content types. Windows' registry sometimes
+maps `.js` to `text/plain`, and browsers refuse to run a module script with that type: without
+the fix the React app would show a blank window on some PCs only.
+
+### Progress
+
+| Screen | State |
+|---|---|
+| Shell (nav, status bar, toasts, `/api/ping`) | Ported |
+| Exports | **Ported**: list with stages and honest progress, Retry / Retry failed / Cancel / Remove, attempt history, preview, Show in folder. TikTok Studio handoff, Discord and campaigns stay in the original page for now. |
+| Home | **Ported** (4.15.0): Find clips with every option, Running now (pause, resume, cancel, open, hide), Recent (one click opens again), live clipping, the missing-tools banner. Choices are shared with the original page (same `vc_*` keys; the render defaults are checked against `app.js` by a test). |
+| Settings | **Ported**: Export format (preset, quality, advanced settings on top of the preset, captions, loudness, file names with the preview), Watermark (text and image layers with a 9:16 preview you can drag them on, saved watermarks, Import / From link / Share, and the active campaign's own watermark), Campaigns (the active one, rules, length, its own watermark, the Discord webhook with Test, Share / Import / From link), Performance, Caption words, Titles and captions, Hashtags (file names and post captions, per streamer and platform, with the preview), Content check (categories, censoring, how flags are reviewed, your own words), Twitch sign-in, the clip hotkey, Downloads and tools, Clip ranking (per streamer, What it learned, Forget), Storage (folders, Delete VODs / clips, automatic cleanup), Updates (with All versions and the private-repository token) and About (Uninstall). Both pages read and write the same server settings and `vc_*` keys, so a change in one shows in the other. Confirmations use one shared dialog (`components/Confirm.tsx`: focus starts on Cancel for anything destructive, Tab stays inside, Escape cancels). |
+| Review | **Slices 1 to 7**: `#review` lists the open videos and `#review/<project>` reviews one: the clip list with To review / Skipped / All / Gems, the player (the clip's stretch, looping, the shared preview volume, the 480p copy for videos the window can't play), title (Another title), post caption (Copy), Keep and render (with the content check's warning), Skip (asks why), Remove from queue, Retry render, Keep the top N and Skip in bulk (with Undo), the original page's keys, titles arriving in the background, and the editor: the timeline (loudness, words, laughter / screams / cheers, chat; drag an edge to trim with snapping, click to seek, wheel to pan, Ctrl+wheel to zoom), Start / End buttons (±1 s, ±1 frame, Set), Restore original cut, undo / redo, frame step and speed, and I / O / , / . / [ / ] / < / > / + / - / 0, and the clip preview (`features/review/draw.ts`, ported from the original page's drawing: every layout, following the face, title, captions with their styles and animations, the watermark, what TikTok covers; drag the title, captions or a watermark layer to place it). `test_web_review.py` compares it with the original page's preview on the same frame: identical. The Text and Layout tabs (`features/review/StylePanels.tsx`: title and caption styles, fonts, highlight colour, sizes, animation, timing, templates and saved styles; shape, layout, Auto-frame, following the face, the camera box, focus, zoom, saved framings, GPU encoding), all in `vc_opts` as the original page keeps them, and the Captions tab (`captions.ts`: fix a line, add one at the playhead, delete one, Undo all edits; saved as `words_edit`, checked again after each edit), and the content check (`checks.ts`, `ContentCheck.tsx`: the Flagged tab with its filter and Leave / Dismiss / Exclude all, each flag with its fixes tried before they're made, Dismiss, Undo fix, Leave as is, Review and edit, Exclude / Include, Remove with Undo, history; muted and bleeped stretches heard while playing), and the whole stream (`streamMap.ts`, `Overview.tsx`, `StreamTools.tsx`: the overview of the stream's hype with the clips on it, click a clip to open it or any other moment to preview it and Make a clip here; the header's facts, Detection settings with Try and Apply (`/api/repick`, `dry_run`), Suggest 5 more, deep scan with its progress and new gems as they're found, and title A / B with the streamer's name). Exact preview renders a few seconds around the playhead with the export pipeline (`/api/preview_render`) and plays them over the preview. Live sessions open at `#review/live/<session>` (`live.ts`, `LiveHead.tsx`): the state, recording, chat, moments and ads skipped, lowest score, how many clips, Hands-free, Clip last 30s (C) and Stop, new moments as they're clipped, and the overview of the whole stream so far with the live edge. Home opens videos (`#review/<project>`) and live sessions (`#review/live/<session>`) here, and the new Review keeps `tests/test_ui.py`'s whole contract. "Edit in the current UI" still opens the same clip in the original page (`/legacy/#open=<project>/<clip>`). |
+
+### Working on it
+
+```sh
+cd web && npm ci            # once
+python src/app.py --browser # the app's server, in another terminal
+npm run dev                 # http://localhost:5173/#exports, hot reload, API proxied to the app
+npm test                    # Vitest: API client, schemas, polling, Exports, Home, Settings
+npm run build               # type-checks (tsc --noEmit), then writes src/web
+python tests/test_web_exports.py   # the built Exports screen against real renders in a real browser
+python tests/test_web_home.py      # Home through to Review with a real video
+python tests/test_web_settings.py  # Settings: saved on the server and shown in the original page
+python tests/test_web_review.py    # Review: a generated video, keep / skip / bulk skip, saved with the VOD
+```
+
+### Dependencies (and the ones left out on purpose)
+
+- **react, react-dom** (19): the UI.
+- **zod** (4): every answer from the server is checked against `web/src/api/schemas.ts` before a screen
+  uses it. Shapes are "loose" (extra fields pass), so a newer server doesn't break an older screen,
+  and a wrong shape shows a clear message instead of a broken screen.
+- Dev only: **vite**, **@vitejs/plugin-react**, **typescript**, **vitest**, **jsdom**, **@testing-library/react**.
+- **Not added:** a router (hash switching is enough), Zustand and TanStack Query (the server owns
+  all state; `usePoll` refetches it and drops out-of-order answers; that's the whole data layer the
+  ported screens need). Revisit Zustand when the Review editor's undo/redo state is ported.
+
+Versions are pinned exactly in `web/package.json`; `web/package-lock.json` is committed and CI runs `npm ci`.
+
+## The API
+
+- Routes: [api-routes.md](api-routes.md) (generated: `python scripts/api_routes.py`).
+- Every answer is JSON. Errors are `{"error": "…"}` with a 4xx/5xx status; the message is written for
+  the user and can be shown as is. A 404 on `/api/project/{id}`, `/api/clips/{id}` etc. means the
+  session expired (the app restarted): send the user home.
+- POST bodies must be JSON objects with `Content-Type: application/json` (415 otherwise), under
+  16 MB (413). A POST with no body needs no content type.
+- Port the original `api()` helper as is (`src/ui/app.js`, top): it turns network failures and
+  `{"error"}` into thrown `Error`s with user-facing messages.
+- `python scripts/api_routes.py --ui` lists every API path the UIs build and flags any the server
+  doesn't have. It scans `web/src` too, so a typo in a new fetch fails CI.
+
+### Polling the original page does (keep the cadence, or move to one combined poll)
+
+| What | Every | Only when |
+|---|---|---|
+| `/api/status` | 5 s | window visible |
+| `/api/clips/{pid}` | 1.2 s | a VOD is open and visible |
+| `/api/live/{id}` | 1.5 s | a live session is open and visible |
+| `/api/queue` | 1.5 s | renders queued/running, Exports open, or live auto-render |
+| `/api/job/{id}` | while a job runs | |
+| `/api/ping` | 60 s | **always, even hidden**: browser mode quits after 20 min without it |
+
+Catch up on `visibilitychange` (status, queue, live, clips) as the original does. In React, one
+`usePoll(path, ms, enabled)` hook that pauses on `document.hidden` covers all of these.
+
+### Saved UI preferences
+
+The original page keeps these in `localStorage` with the prefix `vc_`. Read the same keys so
+people don't lose their settings when the new UI ships:
+
+`vc_cookies` `vc_cw` `vc_deepModel` `vc_guides` `vc_liveFreq` `vc_liveMinQ` `vc_liveMode`
+`vc_liveSrc` `vc_maxh` `vc_muted` `vc_opts` `vc_src` `vc_useEmotes`
+
+`vc_opts` holds the render options (layout, crop, captions, fonts, …) merged over `DEFAULTS` in
+`app.js`; the server accepts them unchanged in `/api/queue/add`, `/api/preview_render` etc.
+
+## The test contract
+
+`tests/test_ui.py` touches the page **only** through these, so the same test runs against either
+UI (`CLIPRADAR_UI=web python tests/test_ui.py`). CI runs it on both, and both have to pass: the new
+UI keeps the whole contract, through its own Review (Home opens videos and live sessions there).
+
+`data-testid` attributes:
+
+| testid | Element |
+|---|---|
+| `nav-home` `nav-review` `nav-exports` `nav-settings` | the four main views; clicking switches |
+| `source-input` | Home: link or file box |
+| `find-clips` | Home: Find clips (a primary button: the test checks it's the accent green `#2fe36f`, DESIGN.md) |
+| `batch-bar` | Review: the bar with Keep / Skip many; hidden until there are clips |
+| `batch-count` | its `<select>`: 3, 5, 10, 15, 20, 0 (all) |
+| `batch-keep` | Keep and render the top N |
+| `skip-score` | its `<select>`: 0 (all), 40, 50, 60, 75 |
+| `batch-skip` | Skip clips |
+| `clip-preview` | the 9:16 preview `<canvas>` |
+| `vol-box` `mute-btn` `vol-slider` | the preview volume: the area the mouse wheel turns it up or down in (5% a notch), mute, and the 0 to 100 slider (`aria-valuetext` `Muted (30%)` while muted) |
+| `confirm-yes` `confirm-no` | the confirm dialog's buttons |
+| `toasts` | the toast stack; each toast's button is `toast-action` (Undo, Show, …) |
+
+`window.ClipRadarTest` (plain JSON in and out):
+
+| Member | Returns / does |
+|---|---|
+| `clips()` | `[{state, quality, gem}]` for the open VOD, in list order (`state`: `todo` `kept` `skipped`) |
+| `setOption(key, value)` | sets one render option (the test turns `captions` off to skip Whisper) |
+| `setTodoQualities([n, …])` | sets the score of each clip still to review (gems excluded), in order, and re-renders |
+| `reloadExport()` | reloads export settings (watermarks) from the server and redraws |
+| `hitBox(name)` | `{x, y, w, h}` where a draggable layer (`title`, `cap`, `wm0`…) was drawn, in canvas pixels, or `null` |
+| `previewWidth()` | the preview canvas's own width, to scale `hitBox` to screen pixels |
+| `open()` | what Review has open: `{kind: 'vod' \| 'live', id}`, or `null` |
+| `current()` | the selected clip, as `"<project>:<clip id>"` |
+| `volume()` | `{vol, muted, level, ex}`: the preview video's volume and mute, what the speaker shows (`off` `low` `high`), and the level the Exports preview plays at |
+
+Other tests (`tests/e2e.py`, every `tests/test_*.py`) use only the HTTP API and don't care which UI is served.
+
+## Port, don't rewrite
+
+The preview canvas has to match what FFmpeg renders. `drawTitle`, `drawCaption`, `drawWatermark`,
+`drawGuides`, `FONTS` and the layout maths in `app.js` (player and format sections) should move into a
+plain TypeScript module and be called from a `<canvas>` component's effect, not re-implemented in JSX.
+Likewise the editor timeline (`drawEditor`, trims, undo/redo) and the heat strip. Keyboard shortcuts
+(Enter keep, X skip, ↑/↓, Ctrl+Z) are on `document` in the original: keep one global handler that
+ignores typing in inputs.

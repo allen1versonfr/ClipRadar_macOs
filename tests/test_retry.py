@@ -1,0 +1,223 @@
+"""
+Unit tests for render failure and retry: a real FFmpeg crop failure gets a plain-words message
+that points at the layout, the item lands in a failed state (not stuck at 0%), Retry renders it
+again under the same file name, and nothing is duplicated or lost.
+
+  python tests/test_retry.py
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+os.environ["CLIPRADAR_DATA"] = tempfile.mkdtemp(prefix="vc_test_")
+os.environ["CLIPRADAR_WORK"] = tempfile.mkdtemp(prefix="vc_test_")
+os.environ["CLIPRADAR_UPDATE_API"] = "http://127.0.0.1:9/none"
+sys.path.insert(0, os.path.join(HERE, "..", "src"))
+
+import server  # noqa: E402
+
+failures = []
+
+
+def check(name, ok, detail=""):
+    print(f"[{'ok' if ok else 'FAIL'}] {name}" + (f": {detail}" if detail and not ok else ""), flush=True)
+    if not ok:
+        failures.append(name)
+
+
+# what FFmpeg really says when a crop doesn't fit (asked from the installed FFmpeg when there is one)
+SAMPLE = ("[Parsed_crop_0 @ 0x1] Invalid too big or non positive size for width '0' or height '0'\n"
+          "[Parsed_crop_0 @ 0x1] Failed to configure input pad on Parsed_crop_0\n"
+          "Error reinitializing filters!\nFailed to inject frame into filter network: Invalid argument")
+crop_err = SAMPLE
+if shutil.which("ffmpeg"):
+    p = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=1",
+                        "-vf", "crop=0:0:400:300", "-f", "null", "-"], capture_output=True, text=True)
+    crop_err = (p.stderr or SAMPLE).strip()
+msg, detail = server.friendly_render_error(RuntimeError("ffmpeg failed:\n" + crop_err))
+check("a crop that doesn't fit is explained as a layout problem", "layout" in msg.lower() and "retry" in msg.lower(), msg)
+check("with FFmpeg's own words kept as details", "crop" in detail.lower(), detail)
+enc, _ = server.friendly_render_error(RuntimeError("Error while opening encoder for output stream #0:0 - h264_nvenc"))
+check("encoder failures keep their own advice", "GPU" in enc, enc)
+
+attempts = []
+OUT = tempfile.mkdtemp(prefix="vc_out_")
+
+
+def fake_render(it):
+    attempts.append(it["id"])
+    it["progress"] = 0.4
+    if len(attempts) == 1:
+        raise RuntimeError("ffmpeg failed:\n" + crop_err)
+    it.setdefault("folder", OUT)
+    it.setdefault("name", f"{it['title']}.mp4")
+    os.makedirs(it["folder"], exist_ok=True)
+    with open(os.path.join(it["folder"], it["name"]), "wb") as f:
+        f.write(b"ok")
+    it["path"] = os.path.join(it["folder"], it["name"])
+
+
+server._render_item = fake_render
+srv, url = server.start(7991)
+
+
+def api(path, body=None):
+    req = urllib.request.Request(url + path, data=None if body is None else json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        return json.loads(urllib.request.urlopen(req, timeout=10).read())
+    except urllib.error.HTTPError as e:
+        return {"status": e.code, **json.loads(e.read() or b"{}")}
+
+
+def wait_status(iid, want, timeout=15):
+    end = time.time() + timeout
+    while time.time() < end:
+        it = next((x for x in api("/api/queue")["items"] if x["id"] == iid), None)
+        if it and it["status"] in want:
+            return it
+        time.sleep(0.1)
+    return it
+
+
+folder = tempfile.mkdtemp(prefix="vc_out_")
+item = {"id": "r1", "pid": "p1", "start": 0, "end": 5, "title": "Crop at the edge", "status": "queued",
+        "progress": 0.0, "folder": folder, "name": "Crop at the edge.mp4", "workdir": folder, "video": "",
+        "opts": {}, "created": time.time()}
+with server.queue_lock:
+    server.queue.append(item)
+server.queue_wake.set()
+
+it = wait_status("r1", ("error",))
+check("a failed render ends as failed, not stuck", it and it["status"] == "error", it)
+check("with the plain-words reason", it and "layout" in it.get("error", "").lower(), it and it.get("error"))
+check("and one attempt counted", it and it.get("attempts") == 1, it and it.get("attempts"))
+
+r = api("/api/queue/retry", {"id": "r1"})
+check("retry accepts it", r.get("retried") == 1, r)
+it = wait_status("r1", ("done",))
+check("the retry renders", it and it["status"] == "done", it)
+check("under the same file name", it and it["name"] == "Crop at the edge.mp4" and os.path.isfile(os.path.join(folder, it["name"])), it)
+check("old error and progress cleared", it and not it.get("error") and it.get("progress") == 1.0, it)
+check("rendered exactly twice (once failed, once on retry)", attempts == ["r1", "r1"], attempts)
+check("still one item in Exports", sum(1 for x in api("/api/queue")["items"] if x["id"] == "r1") == 1)
+r = api("/api/queue/retry", {"id": "r1"})
+check("retrying a finished clip does nothing", r.get("status") == 404, r)
+check("the ready sound played exactly once (not for the failed attempt)", server.SOUND_LOG.count(("ready", "r1")) == 1, server.SOUND_LOG)
+
+# sounds: once when you queue a clip, never for the same clip sent twice
+server.projects["p2"] = {"title": "s", "video": "", "workdir": folder, "live": "", "clips": []}
+clip = {"start": 10.0, "end": 20.0, "title": "Queued once"}
+server.MAX_WORKERS[0] = 0                     # hold renders while queuing, like a busy queue
+a1 = server.queue_add("p2", dict(clip), {}, sound=True)
+a2 = server.queue_add("p2", dict(clip), {}, sound=True)
+server.MAX_WORKERS[0] = 1
+server.queue_wake.set()
+check("the same clip sent twice is one item", a1 is a2)
+check("and makes one queued sound", server.SOUND_LOG.count(("queued", a1["id"])) == 1, server.SOUND_LOG)
+it = wait_status(a1["id"], ("done",))
+_end = time.time() + 5                        # the item shows done a moment before its sound is logged
+while time.time() < _end and ("ready", a1["id"]) not in server.SOUND_LOG:
+    time.sleep(0.05)
+check("and one ready sound when it renders", it and server.SOUND_LOG.count(("ready", a1["id"])) == 1, server.SOUND_LOG)
+server.queue_add("p2", dict(clip, start=30.0, end=40.0, title="Hands-free"), {})
+check("clips queued on their own (hands-free) don't make a queued sound", sum(1 for e, _ in server.SOUND_LOG if e == "queued") == 1)
+import exports  # noqa: E402
+exports.save({"sounds": False})
+n = len(server.SOUND_LOG)
+server.queue_add("p2", dict(clip, start=50.0, end=60.0, title="Quiet"), {}, sound=True)
+check("sounds switched off: none", len(server.SOUND_LOG) == n)
+exports.save({"sounds": True})
+
+server.SHUTTING_DOWN[0] = True
+srv.shutdown()
+# the speech model can't run (its first download failed): the clip renders without captions and says
+# so; YouTube's captions stand in when the video has them; with censoring on, the render stops instead
+import engine  # noqa: E402
+import safety  # noqa: E402
+real_ew, real_wa = server.ensure_words, engine.whisper_available
+
+
+def broken(*a, **k):
+    raise RuntimeError("Couldn't load Whisper. cpu: 403 Forbidden")
+
+
+server.ensure_words, engine.whisper_available = broken, lambda: True
+ro = engine.RenderOpts(captions=True)
+prw = {"info": {"has_audio": True}, "yt": {}, "chat": []}
+it = {"start": 10.0, "end": 20.0, "title": "T", "post": ""}
+safety.save_config({"censor": "off"})
+words = server._render_inputs(it, prw, ro, lambda: None)[0]
+check("Whisper can't run: the clip renders without captions", words == [] and it.get("captions_skipped"), words)
+check("and says why, with Retry", "without captions" in it.get("warning", "") and "Retry" in it["warning"], it.get("warning"))
+it2 = {"start": 10.0, "end": 20.0, "title": "T", "post": ""}
+prw["yt"] = {"words": [{"start": 12.0, "end": 12.4, "word": "hello"}]}
+words = server._render_inputs(it2, prw, ro, lambda: None)[0]
+check("a YouTube video's own captions stand in", [w["word"] for w in words] == ["hello"] and abs(words[0]["start"] - 2.0) < 1e-6
+      and not it2.get("warning"), words)
+safety.save_config({"censor": "mute"})
+prw["yt"] = {}
+try:
+    server._render_inputs({"start": 10.0, "end": 20.0, "title": "T", "post": ""}, prw, ro, lambda: None)
+    check("with censoring on, the render stops instead of skipping the bleeps", False)
+except RuntimeError as e:
+    check("with censoring on, the render stops instead of skipping the bleeps", "censor" in str(e), str(e))
+safety.save_config({"censor": "off"})
+server.ensure_words, engine.whisper_available = real_ew, real_wa
+
+# a layout whose crop FFmpeg can't build still gives a clip: the whole picture, with a warning
+long_err = "\n".join(["[Parsed_crop_1 @ 0x1] Invalid too big or non positive size for width '4000' or height '4000'",
+                      "[Parsed_crop_1 @ 0x1] Failed to configure input pad on Parsed_crop_1"]
+                     + [f"[vost#0:0/libx264 @ 0x2] encoder line {i}" for i in range(10)])
+why = engine._ffmpeg_reason(long_err)
+check("the render error keeps FFmpeg's reason, not just its last lines", "Invalid too big" in why and "encoder line 9" in why, why)
+if shutil.which("ffmpeg"):
+    tmp = tempfile.mkdtemp(prefix="vc_fb_")
+    src = os.path.join(tmp, "src.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=2",
+                    "-f", "lavfi", "-i", "sine=frequency=300:duration=2", "-shortest", "-c:v", "libx264",
+                    "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", src], check=True)
+    real_bf = engine.build_filter
+
+    def too_big(info, o, path=None, face=None):
+        f, cy = real_bf(info, o, path, face)
+        return (f.replace(",crop=", ",crop=4000:4000:0:0,crop=", 1) if o.layout == "full" else f), cy
+
+    engine.build_filter = too_big
+    warned, logged = [], []
+    out = os.path.join(tmp, "out.mp4")
+    try:
+        engine.render_clip(src, 0.0, 1.5, out, engine.RenderOpts(layout="full", captions=False, hw_encode=False, speed="fast"),
+                           title="Fallback", log=logged.append, warn=warned.append)
+        check("a crop that can't be built still renders the clip", os.path.getsize(out) > 1000)
+    except Exception as e:
+        check("a crop that can't be built still renders the clip", False, str(e)[-300:])
+    check("and says the layout fell back, and where FFmpeg's reason is", warned and "blurred background" in warned[0]
+          and "details" in warned[0], warned)
+    engine.build_filter = lambda info, o, path=None, face=None: (
+        "[0:v]crop=4000:4000:0:0,scale=1080:1920,format=yuv420p[v]", 960.0)
+    try:
+        engine.render_clip(src, 0.0, 1.5, os.path.join(tmp, "out2.mp4"),
+                           engine.RenderOpts(layout="full", captions=False, hw_encode=False, speed="fast"), title="", log=lambda m: None)
+        check("when the fallback can't be built either, the render fails", False)
+    except RuntimeError as e:
+        check("when the fallback can't be built either, the render fails with FFmpeg's reason", "Parsed_crop" in str(e), str(e))
+    engine.build_filter = real_bf
+
+print("PASSED" if not failures else f"FAILED: {', '.join(failures)}")
+sys.exit(1 if failures else 0)

@@ -1,0 +1,373 @@
+"""
+The new UI's Settings screen against the real server, in a real browser. What you change there is
+what the server and the current UI use: how many clips render at once, render priority, download
+quality, the update settings, export format, the watermark, campaigns, caption words, titles, Hashtags and Content check. Clip ranking explains and forgets what it learned. Storage counts the VODs and clips, and Delete VODs asks first and
+then deletes only the VODs. A Twitch token Twitch can't accept is explained, an update check that
+can't reach GitHub says so, the sections not ported yet open the current UI's Settings, and the
+screen fits a narrow window without sideways scrolling.
+
+Needs the React build (cd web && npm run build) and Playwright; skipped without them.
+
+  python tests/test_web_settings.py
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+os.environ["CLIPRADAR_DATA"] = tempfile.mkdtemp(prefix="vc_test_")
+WORK = os.environ["CLIPRADAR_WORK"] = tempfile.mkdtemp(prefix="vc_test_")
+VODS = []
+for name in ("stream_one", "stream_two"):           # two projects, each with a VOD and a rendered clip
+    d = os.path.join(WORK, name)
+    os.makedirs(os.path.join(d, "tiktok"))
+    with open(os.path.join(d, "meta.json"), "w") as f:
+        f.write("{}")
+    VODS.append(os.path.join(d, "vod.mp4"))
+    with open(VODS[-1], "wb") as f:
+        f.write(os.urandom(3_000_000))
+    with open(os.path.join(d, "tiktok", "clip.mp4"), "wb") as f:
+        f.write(os.urandom(800_000))
+os.environ["CLIPRADAR_UPDATE_API"] = "http://127.0.0.1:9/none"     # nothing listens: checks fail, quickly
+os.environ.pop("CLIPRADAR_UI", None)
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "src"))
+
+failures = []
+
+
+def check(name, ok, detail=""):
+    print(f"[{'ok' if ok else 'FAIL'}] {name}" + (f": {detail}" if detail and not ok else ""), flush=True)
+    if not ok:
+        failures.append(name)
+
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    print("SKIPPED: Playwright isn't installed (pip install playwright)")
+    sys.exit(0)
+
+import campaigns  # noqa: E402
+import cleanup  # noqa: E402
+import learning  # noqa: E402
+import safety  # noqa: E402
+import studio_auto  # noqa: E402
+studio_auto.available = lambda: True     # as on a PC with Edge or Chrome, so Press Post for me is there to set
+
+for i in range(10):                                  # decisions to learn from, for one streamer
+    learning.record("teststreamer", f"c{i}", {k: (i % 3) / 2 for k in learning.FEATURES}, "keep" if i % 3 else "skip")
+import exports  # noqa: E402
+import hashtags  # noqa: E402
+import server  # noqa: E402
+import updater  # noqa: E402
+
+if not (server.WEB_DIR / "index.html").is_file():
+    print("SKIPPED: the React UI isn't built (cd web && npm ci && npm run build)")
+    sys.exit(0)
+
+from browser import launch  # noqa: E402
+
+srv, url = server.start(7992)
+
+with sync_playwright() as pw:
+    browser = launch(pw)
+    if browser is None:
+        print("SKIPPED: no Chromium-based browser (set CLIPRADAR_BROWSER)")
+        server.SHUTTING_DOWN[0] = True
+        srv.shutdown()
+        sys.exit(0)
+    page = browser.new_page(viewport={"width": 1366, "height": 860})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    expected_4xx = ("/api/twitch/token",)          # the token that isn't one, on purpose
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error"
+            and not m.text.startswith("Failed to load resource") else None)
+    page.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400
+            and not r.url.endswith(expected_4xx) else None)
+
+    page.goto(url + "/next/#settings")
+    page.wait_for_selector("[data-testid=set-about]", timeout=15000)
+    check("Settings is a screen of the new UI", page.locator("[data-testid=not-ported-settings]").count() == 0
+          and page.locator("h1", has_text="Settings").count() == 1)
+
+    # finding your way: the menu jumps to a section, a search narrows to what matches, a link opens a section
+    nav = page.get_by_role("navigation", name="Settings sections")
+    check("the sections are in four groups", all(nav.get_by_text(g, exact=True).count() == 1 for g in ("Clips", "Posting", "Finding clips", "App")))
+    nav.get_by_role("link", name="Twitch sign-in").click()
+    page.wait_for_timeout(500)
+    top = page.evaluate("document.querySelector('[data-testid=set-twitch]').getBoundingClientRect().top")
+    check("the menu jumps to a section", 0 <= top < 200, top)
+    page.get_by_test_id("set-search").fill("webhook")
+    page.wait_for_timeout(300)
+    visible = [x for x in ("set-campaigns", "set-export", "set-storage") if page.get_by_test_id(x).is_visible()]
+    check("a search shows only the sections that match", visible == ["set-campaigns"], visible)
+    page.get_by_test_id("set-search").fill("")
+    page.goto(url + "/next/#settings/tiktok")
+    page.wait_for_selector("[data-testid=set-tiktok]", timeout=15000)
+    page.wait_for_timeout(500)
+    top = page.evaluate("document.querySelector('[data-testid=set-tiktok]').getBoundingClientRect().top")
+    check("#settings/tiktok opens Settings at TikTok", 0 <= top < 200, top)
+    page.wait_for_selector("[data-testid=set-press-post]", timeout=10000)
+    if page.get_by_test_id("set-press-post").count():
+        page.get_by_test_id("set-press-post").check()
+        page.wait_for_timeout(500)
+        check("Press Post for me is saved from Settings", studio_auto.load_settings()["press_post"] is True)
+        page.get_by_test_id("set-press-post").uncheck()
+        page.wait_for_timeout(500)
+        check("and turned off again", studio_auto.load_settings()["press_post"] is False)
+    else:
+        check("without Edge or Chrome, TikTok says how posting works", "Open TikTok Studio" in page.get_by_test_id("set-tiktok").inner_text())
+    page.goto(url + "/next/#settings")
+    page.wait_for_selector("[data-testid=set-about]", timeout=15000)
+
+    # Performance: saved on the server, where renders and downloads read it
+    perf = page.locator("[data-testid=set-perf]")
+    perf.get_by_label("Clips rendering at once").select_option("2")
+    perf.get_by_role("radio", name="Finish faster").click()
+    # the choice shows at once; wait for the server to have it (the save is a request behind it)
+    deadline = time.time() + 10
+    while time.time() < deadline and (exports.load().get("renders"), exports.load().get("priority")) != (2, "fast"):
+        time.sleep(0.1)
+    prefs = exports.load()
+    check("clips rendering at once and priority are saved on the server", prefs.get("renders") == 2
+          and prefs.get("priority") == "fast", {k: prefs.get(k) for k in ("renders", "priority")})
+    check("and this PC's details are shown", "processor threads" in perf.locator("[data-testid=perf-info]").inner_text())
+
+    # Downloads and tools: the same choice as in the current UI
+    page.locator("[data-testid=set-tools]").get_by_label("Download quality").select_option("720")
+    rows = page.locator("[data-testid=tool-table] tr").all_inner_texts()
+    check("every tool is listed with whether it's installed", len(rows) == 5 and "FFmpeg" in rows[0], rows)
+
+    # Twitch: a token Twitch can't use is explained, and nothing is saved
+    tw = page.locator("[data-testid=set-twitch]")
+    if not tw.locator("details").evaluate("d => d.open"):
+        tw.locator("summary").click()
+    tw.get_by_label("Twitch sign-in token").fill("not a token")
+    tw.get_by_role("button", name="Save").click()
+    page.wait_for_function("document.querySelector('[data-testid=set-twitch]').textContent.includes(\"doesn't look like\")",
+                           timeout=10000)
+    check("a token that isn't one is explained", True)
+    check("and you're still signed out", tw.locator("[data-testid=tw-state]").inner_text() == "Not signed in")
+
+    # Updates: a check that can't reach GitHub says so; the automatic check can be turned off
+    upd = page.locator("[data-testid=set-updates]")
+    upd.get_by_role("button", name="Check for updates").click()
+    page.wait_for_function("document.querySelector('[data-testid=upd-state]').className.includes('err')", timeout=20000)
+    check("a failed update check says why", len(upd.locator("[data-testid=upd-state]").inner_text()) > 10,
+          upd.locator("[data-testid=upd-state]").inner_text())
+    upd.get_by_label("Check for updates automatically").uncheck()
+    deadline = time.time() + 10
+    while time.time() < deadline and updater.view().get("auto") is not False:
+        time.sleep(0.1)
+    check("automatic update checks can be turned off", updater.view().get("auto") is False, updater.view().get("auto"))
+    check("the clip hotkey says whether it works here", page.locator("[data-testid=hk-state]").inner_text() != "")
+
+    # Storage: the space VODs and clips use; Delete VODs asks first, then deletes only the VODs
+    st = page.locator("[data-testid=set-storage]")
+    page.wait_for_function("document.querySelector('[data-testid=vod-use]').textContent.includes('2 streams')", timeout=10000)
+    check("Storage counts the VODs and clips", st.locator("[data-testid=clip-use]").inner_text().startswith("2 clips"),
+          st.locator("[data-testid=clip-use]").inner_text())
+    check("and lists every folder", st.locator("[data-testid=loc-list] li").count() >= 4)
+    st.get_by_role("button", name="Delete VODs").click()
+    dialog = page.get_by_role("alertdialog", name="Delete 2 downloaded streams?")
+    dialog.get_by_role("button", name="Cancel").click()
+    check("Cancel keeps the VODs", all(os.path.exists(v) for v in VODS))
+    st.get_by_role("button", name="Delete VODs").click()
+    page.get_by_role("alertdialog").get_by_role("button", name="Delete VODs").click()
+    page.wait_for_function("document.querySelector('[data-testid=vod-use]').textContent === 'None'", timeout=15000)
+    check("Delete VODs deletes the VODs and keeps the clips", not any(os.path.exists(v) for v in VODS)
+          and all(os.path.exists(os.path.join(WORK, n, "tiktok", "clip.mp4")) for n in ("stream_one", "stream_two")))
+    check("and says so", "Deleted 2 streams" in page.locator("[data-testid=toasts]").inner_text())
+    auto = st.get_by_label("Delete a VOD when you're finished with it")
+    auto.click()
+    page.get_by_role("alertdialog").get_by_role("button", name="Cancel").click()
+    check("deleting finished VODs automatically stays off after Cancel", not auto.is_checked() and not cleanup.load()["vods"])
+
+    # Clip ranking: what was learned, explained, and forgotten on request
+    lr = page.locator("[data-testid=set-learn]")
+    check("Clip ranking lists the streamer it learned for", "teststreamer" in lr.locator("[data-testid=lr-list]").inner_text()
+          and "10 decisions" in lr.inner_text())
+    lr.get_by_role("button", name="What it learned", exact=True).click()
+    page.wait_for_selector("[data-testid=lr-explain]", timeout=10000)
+    check("'What it learned' shows what's stored", "10 decisions stored" in lr.locator("[data-testid=lr-explain]").inner_text())
+    lr.get_by_role("button", name="Forget what it learned for teststreamer").click()
+    page.wait_for_function("document.querySelector('[data-testid=set-learn]').textContent.includes('Nothing learned yet')", timeout=10000)
+    check("Forget removes it on the server", not [x for x in learning.summary()["profiles"] if x["streamer"] == "teststreamer"])
+
+    # Export format: a preset, a custom setting on top, and the file name template
+    ex = page.locator("[data-testid=set-export]")
+    ex.get_by_role("radio", name="X", exact=True).click()
+    ex.locator("summary", has_text="Advanced").click()
+    ex.get_by_label("Resolution").select_option("0.6667")
+    ex.get_by_placeholder("{title}", exact=True).fill("{title} - {streamer}")
+    deadline = time.time() + 10
+    while time.time() < deadline and exports.load().get("template") != "{title} - {streamer}":
+        time.sleep(0.1)
+    ep = exports.load()
+    check("export format choices are saved on the server", ep.get("preset") == "x" and ep.get("custom", {}).get("scale") == 0.6667
+          and ep.get("template") == "{title} - {streamer}", {k: ep.get(k) for k in ("preset", "custom", "template")})
+    page.wait_for_function("document.querySelector('[data-testid=ex-describe]').textContent.startsWith('X')", timeout=10000)
+    check("and the summary follows them", True)
+
+    # Watermark: a text layer, placed by its buttons and then by dragging it on the preview
+    wm = page.locator("[data-testid=set-watermark]")
+    wm.get_by_label("Put a watermark on exported clips").check()
+    wm.get_by_role("button", name="+ Text layer").click()
+    wm.get_by_placeholder("@yourchannel").fill("@clipradar")
+    wm.get_by_role("radio", name="Centre").click()
+    deadline = time.time() + 10
+    while time.time() < deadline and [m.get("pos") for m in exports.load()["watermark"]["marks"]] != ["c"]:
+        time.sleep(0.1)
+    w = exports.load()["watermark"]
+    check("a watermark layer made in the new UI is saved on the server", w["on"] and len(w["marks"]) == 1
+          and w["marks"][0]["text"] == "@clipradar" and w["marks"][0]["pos"] == "c", w)
+    lit = page.evaluate("""() => { const c = document.querySelector('[data-testid=wm-preview]'), g = c.getContext('2d');
+        const d = g.getImageData(c.width * .3, c.height * .45, c.width * .4, c.height * .1).data; let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] > 150 && d[i + 2] > 150) n++; return n }""")
+    check("the preview draws the layer in the middle", lit > 20, lit)
+    bb = wm.locator("[data-testid=wm-preview]").bounding_box()
+    page.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(bb["x"] + bb["width"] * 0.4, bb["y"] + bb["height"] * 0.4, steps=4)
+    page.mouse.move(bb["x"] + bb["width"] * 0.3, bb["y"] + bb["height"] * 0.3, steps=4)
+    page.mouse.up()
+    deadline = time.time() + 10
+    while time.time() < deadline and exports.load()["watermark"]["marks"][0]["pos"] != "free":
+        time.sleep(0.1)
+    m0 = exports.load()["watermark"]["marks"][0]
+    check("dragging it on the preview places it by hand there", m0["pos"] == "free" and abs(m0["x"] - 0.3) < 0.03
+          and abs(m0["y"] - 0.3) < 0.03, m0)
+
+    # Campaigns: a new one with a copy of your watermark becomes the active one, and Watermark then edits its copy
+    cp = page.locator("[data-testid=set-campaigns]")
+    cp.get_by_role("button", name="+ New").click()
+    cp.get_by_placeholder("Kai Cenat clipping").fill("Clip Co")
+    cp.get_by_placeholder("#ad #KaiCenatClips").fill("#ad #clipco")
+    cp.get_by_role("button", name="Copy my current watermark").click()
+    page.wait_for_function("document.querySelector('[data-testid=cp-wm-info]').textContent.includes('save to keep')", timeout=10000)
+    cp.get_by_role("button", name="Save", exact=True).click()
+    deadline = time.time() + 10
+    while time.time() < deadline and not campaigns.load()["active"]:
+        time.sleep(0.1)
+    cd = campaigns.load()
+    c0 = cd["list"][0] if cd["list"] else {}
+    check("a campaign made in the new UI is saved and active", cd["active"] == c0.get("id") and c0.get("name") == "Clip Co"
+          and c0.get("tags") == ["#ad", "#clipco"] and c0["watermark"]["use"]
+          and [m["text"] for m in c0["watermark"]["marks"]] == ["@clipradar"], cd)
+    page.wait_for_selector("[data-testid=wm-camp]", timeout=10000)
+    check("Watermark then shows the campaign's own watermark", "Clip Co" in wm.locator("[data-testid=wm-camp]").inner_text())
+    wm.get_by_role("button", name="Use mine instead").click()
+    deadline = time.time() + 10
+    while time.time() < deadline and campaigns.load()["list"][0]["watermark"]["use"]:
+        time.sleep(0.1)
+    check("'Use mine instead' turns the campaign's own watermark off", not campaigns.load()["list"][0]["watermark"]["use"])
+    page.wait_for_function("!document.querySelector('[data-testid=wm-camp]')", timeout=10000)
+    page.wait_for_function("!document.querySelector('[data-testid=set-campaigns] .cp-row').textContent.includes('watermark')", timeout=10000)
+    check("and the campaign's row no longer lists a watermark", True)
+
+    # Caption words: saved when you leave the box
+    cw = page.locator("[data-testid=set-words]")
+    cw.get_by_placeholder("word = replacement", exact=False).fill("gonna = going to")
+    cw.get_by_placeholder("Names, places", exact=False).fill("Kai, Mafia")
+    cw.get_by_placeholder("word = replacement", exact=False).focus()          # leaving Words to recognise saves it
+    cw.get_by_placeholder("Names, places", exact=False).focus()             # and leaving Replace saves that
+    page.locator("h1").click()
+    deadline = time.time() + 10
+    while time.time() < deadline and not (exports.load().get("replace") and exports.load().get("vocab")):
+        time.sleep(0.1)
+    ep = exports.load()
+    check("caption words are saved on the server", ep.get("replace") == [["gonna", "going to"]] and ep.get("vocab") == ["Kai", "Mafia"],
+          {k: ep.get(k) for k in ("replace", "vocab")})
+
+    # Titles and captions: which title new clips get, saved on the server
+    page.locator("[data-testid=set-titles]").get_by_role("radio", name="B · with the streamer's name").click()
+    deadline = time.time() + 10
+    while time.time() < deadline and server.title_prefs()["pick"] != "b":
+        time.sleep(0.1)
+    check("the title choice is saved on the server", server.title_prefs()["pick"] == "b", server.title_prefs())
+
+    # Hashtags: typed tags are saved after a short pause, and the preview follows them
+    ht = page.locator("[data-testid=set-tags]")
+    ht.get_by_role("button", name="+ #Gaming").click()
+    ht.get_by_placeholder("Kai Cenat: #KaiCenat #Mafia").fill("Kai Cenat: #KaiCenat #Mafia")
+    deadline = time.time() + 10
+    while time.time() < deadline and not (hashtags.load()["file"].get("streamers") and "#Gaming" in hashtags.load()["file"]["general"]):
+        time.sleep(0.1)
+    hf = hashtags.load()["file"]
+    check("hashtags typed in the new UI are saved on the server", "#Gaming" in hf["general"]
+          and hf["streamers"] == {"Kai Cenat": ["#KaiCenat", "#Mafia"]}, hf)
+    ht.get_by_placeholder("Kai Cenat", exact=True).fill("Kai Cenat")
+    page.wait_for_function("document.querySelector('[data-testid=tag-file]').textContent.includes('#Mafia')", timeout=10000)
+    check("the preview shows a streamer's own tags", True)
+
+    # Content check: the same settings as the current UI's, saved on the server
+    sf = page.locator("[data-testid=set-safety]")
+    sf.get_by_role("radio", name="Bleep it").click()
+    sf.get_by_label("Censor Swearing").check()
+    box = sf.get_by_placeholder("Your real name", exact=False)
+    box.fill("Alex Smith, Springfield")
+    box.blur()
+    deadline = time.time() + 10
+    while time.time() < deadline and safety.load_config().get("custom") != ["Alex Smith", "Springfield"]:
+        time.sleep(0.1)
+    cfg = safety.load_config()
+    check("Content check choices are saved on the server", cfg.get("censor") == "bleep" and "profanity" in cfg.get("censor_categories", [])
+          and cfg.get("custom") == ["Alex Smith", "Springfield"], {k: cfg.get(k) for k in ("censor", "censor_categories", "custom")})
+
+    # narrow window: no sideways scrolling
+    page.set_viewport_size({"width": 420, "height": 860})
+    page.wait_for_timeout(300)
+    over = page.evaluate("Math.max(document.documentElement.scrollWidth, document.querySelector('.main').scrollWidth)"
+                         " - document.documentElement.clientWidth")
+    check("Settings fits a 420 px window", over <= 0, over)
+    page.screenshot(path=os.environ.get("CLIPRADAR_SHOT") or os.path.join(tempfile.gettempdir(), "settings.png"))
+    page.set_viewport_size({"width": 1366, "height": 860})
+
+    check("Settings has every section: nothing sends you to the current UI",
+          page.get_by_text("More settings are in the current UI").count() == 0)
+    # the current UI's Settings has the same values
+    page.goto(url + "/legacy/#view=settings")
+    page.wait_for_selector("#view-settings", state="visible", timeout=15000)
+    page.wait_for_function("document.querySelector('#pfRenders').value === '2'", timeout=10000)
+    page.wait_for_function("document.querySelector('#sfCensor button.on')?.dataset.v === 'bleep'", timeout=10000)
+    check("the current UI shows the new UI's export format", page.evaluate(
+        "[document.querySelector('#exPreset button.on')?.dataset.v, document.querySelector('#exScale').value,"
+        " document.querySelector('#exTemplate').value]") == ["x", "0.6667", "{title} - {streamer}"], page.evaluate(
+        "[document.querySelector('#exPreset button.on')?.dataset.v, document.querySelector('#exScale').value,"
+        " document.querySelector('#exTemplate').value]"))
+    check("the current UI shows the new UI's watermark", page.evaluate(
+        "[document.querySelector('#wmOn').checked, document.querySelector('#wmLayers').textContent.includes('@clipradar'),"
+        " document.querySelector('#wmLayers').textContent.includes('placed by hand')]") == [True, True, True])
+    check("the current UI shows the new UI's active campaign", page.evaluate(
+        "document.querySelector('#cpActive').selectedOptions[0]?.textContent") == "Clip Co")
+    check("the current UI shows the new UI's caption words", page.evaluate(
+        "[document.querySelector('#cwReplace').value, document.querySelector('#cwVocab').value]") == ["gonna = going to", "Kai, Mafia"])
+    check("the current UI shows the new UI's title choice", page.evaluate("document.querySelector('#tpPick button.on')?.dataset.v") == "b")
+    check("the current UI shows the new UI's hashtags", page.evaluate("document.querySelector('#htFileStreamers').value")
+          == "Kai Cenat: #KaiCenat #Mafia", page.evaluate("document.querySelector('#htFileStreamers').value"))
+    check("the current UI shows the new UI's Content check choices", page.evaluate(
+        "[document.querySelector('#sfCustom').value, document.querySelector('[data-censor=profanity]').checked]")
+        == ["Alex Smith, Springfield", True])
+    check("the current UI shows the new UI's choices", page.evaluate(
+        "[document.querySelector('#pfRenders').value, document.querySelector('#maxh').value,"
+        " document.querySelector('#pfPriority button.on')?.dataset.v, document.querySelector('#updAuto').checked]")
+        == ["2", "720", "fast", False], page.evaluate(
+        "[document.querySelector('#pfRenders').value, document.querySelector('#maxh').value,"
+        " document.querySelector('#pfPriority button.on')?.dataset.v, document.querySelector('#updAuto').checked]"))
+    check("no errors in either page", not errors, errors[:5])
+    browser.close()
+
+server.SHUTTING_DOWN[0] = True
+srv.shutdown()
+print("PASSED" if not failures else f"FAILED: {', '.join(failures)}")
+sys.exit(1 if failures else 0)

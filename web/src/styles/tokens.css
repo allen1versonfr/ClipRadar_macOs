@@ -1,0 +1,43 @@
+/* Design tokens: DESIGN.md is the direction; the colours match the original page (src/ui/app.css),
+   so both UIs look like one app.
+   Fonts load from the original page's folder rather than a second copy in the build. */
+@font-face { font-family: "Inter"; font-weight: 400; font-display: block; src: url(/ui/fonts/Inter-Regular.woff) format("woff"); }
+@font-face { font-family: "Inter"; font-weight: 500; font-display: block; src: url(/ui/fonts/Inter-Medium.woff) format("woff"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-display: block; src: url(/ui/fonts/Inter-SemiBold.woff) format("woff"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: block; src: url(/ui/fonts/Inter-Bold.woff) format("woff"); }
+
+:root {
+  --bg0: #0e0f11;      /* app chrome: top bar, rail, status bar */
+  --bg1: #141518;      /* main surfaces */
+  --bg2: #1a1b1f;      /* panels, inputs */
+  --bg3: #222328;      /* hover, selected */
+  --bg4: #2a2b31;
+  --line: #26272c;
+  --line2: #33353c;
+  --tx0: #e9eaed;
+  --tx1: #b4b7bf;
+  --tx2: #90939c;      /* the dimmest grey that meets WCAG AA (4.5:1) on every surface */
+  --accent: #2fe36f;   /* electric green: the main action, the selection, progress; nothing else */
+  --accent-2: #22c75d;
+  --accent-soft: rgba(47, 227, 111, .12);
+  --on-accent: #06140b;
+  --ok: var(--accent);  /* ready/done is the accent: green already means done */
+  --warn: #e3a33b;
+  --danger: #f05a5e;
+  --r: 6px;
+  --r-lg: 8px;
+  --gap: 12px;
+  color-scheme: dark;
+  font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  font-size: 14px;     /* DESIGN.md: an energetic creator app, so bigger type than the original page's 13px */
+  font-feature-settings: "cv11", "calt";
+  -webkit-font-smoothing: antialiased;
+}
+/* caption fonts (watermark text uses them too; the renderer has the same files) */
+@font-face { font-family: "VC Montserrat"; src: url(/ui/fonts/captions/Montserrat-Black.ttf) format("truetype"); }
+@font-face { font-family: "VC Poppins"; src: url(/ui/fonts/captions/Poppins-Black.ttf) format("truetype"); }
+@font-face { font-family: "VC Inter"; src: url(/ui/fonts/captions/Inter-Black.otf) format("opentype"); }
+@font-face { font-family: "VC Anton"; src: url(/ui/fonts/captions/Anton-Regular.ttf) format("truetype"); }
+@font-face { font-family: "VC Bebas"; src: url(/ui/fonts/captions/BebasNeue-Regular.ttf) format("truetype"); }
+@font-face { font-family: "VC Bangers"; src: url(/ui/fonts/captions/Bangers-Regular.ttf) format("truetype"); }
+@font-face { font-family: "VC Luckiest"; src: url(/ui/fonts/captions/LuckiestGuy-Regular.ttf) format("truetype"); }
