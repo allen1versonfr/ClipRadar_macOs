@@ -1,9 +1,9 @@
 name: Build and test (macOS)
 
-# Every push and pull request: lint and unit tests on macOS, then the app is built for Apple silicon and for
-# Intel Macs, checked with its built-in self-test (render, VideoToolbox or x264, Whisper captions, titles,
+# Every push and pull request: lint and unit tests on macOS, then the app is built for Apple silicon,
+# checked with its built-in self-test (render, VideoToolbox or x264, Whisper captions, titles,
 # bleeping) and started once. When main carries a version (src/version.py) with no release yet, the build
-# publishes one: tag vX.Y.Z with a DMG and a zip per chip (the zip is what the in-app updater downloads),
+# publishes one: tag vX.Y.Z with a DMG and a zip (the zip is what the in-app updater downloads),
 # and that version's notes from CHANGELOG.md. Pushing a vX.Y.Z tag does the same.
 on:
   workflow_dispatch:
@@ -97,8 +97,6 @@ jobs:
         include:
           - runner: macos-15            # Apple silicon
             arch: arm64
-          - runner: macos-15-intel      # Intel
-            arch: x86_64
     runs-on: ${{ matrix.runner }}
     env:
       SIGNING_CONFIGURED: ${{ secrets.MACOS_CERT_P12_BASE64 != '' && 'true' || 'false' }}
@@ -246,7 +244,7 @@ jobs:
             on && /^## \[/ { exit }
             on { print }' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "::error title=Changelog::no section for $ver in CHANGELOG.md"; exit 1; fi
-          printf '\n---\n**Download:** `ClipRadar-macOS-arm64.dmg` for Apple silicon (M1 and later) or `ClipRadar-macOS-x86_64.dmg` for Intel Macs. macOS 11 or later.\n' >> notes.md
+          printf '\n---\n**Download:** `ClipRadar-macOS-arm64.dmg` for Apple silicon (M1 and later). macOS 11 or later.\n' >> notes.md
           ls -la dist
           gh release create "$tag" dist/*.dmg dist/*.zip --title "Clip Radar $ver for macOS" --notes-file notes.md \
             --target "${{ github.sha }}" --latest

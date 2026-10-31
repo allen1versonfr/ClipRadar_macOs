@@ -6,14 +6,12 @@
   <a href="https://github.com/allen1versonfr/ClipRadar_macOs/releases/latest"><img alt="Version 4.36.0" src="https://img.shields.io/badge/version-4.36.0-2fe36f?style=flat-square"></a>
   <a href="https://github.com/allen1versonfr/ClipRadar_macOs/actions/workflows/build.yml"><img alt="Build and test" src="https://img.shields.io/github/actions/workflow/status/allen1versonfr/ClipRadar_macOs/build.yml?branch=main&style=flat-square&label=build"></a>
   <img alt="macOS 11 or later" src="https://img.shields.io/badge/platform-macOS%2011%2B-1f2329?style=flat-square">
-  <img alt="Apple silicon and Intel" src="https://img.shields.io/badge/chips-Apple%20silicon%20%7C%20Intel-1f2329?style=flat-square">
+  <img alt="Apple silicon" src="https://img.shields.io/badge/chips-Apple%20silicon-1f2329?style=flat-square">
   <img alt="Built with Python" src="https://img.shields.io/badge/python-3.12-1f2329?style=flat-square">
 </p>
 
 <p align="center">
   <a href="https://github.com/allen1versonfr/ClipRadar_macOs/releases/latest/download/ClipRadar-macOS-arm64.dmg"><b>Download for Apple silicon</b></a>
-  &nbsp;·&nbsp;
-  <a href="https://github.com/allen1versonfr/ClipRadar_macOs/releases/latest/download/ClipRadar-macOS-x86_64.dmg"><b>Download for Intel Macs</b></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/allen1versonfr/ClipRadar">Windows version</a>
   &nbsp;·&nbsp;
@@ -88,14 +86,14 @@ This port is based on Clip Radar 4.36.0 (`allen1versonfr/ClipRadar@aca233d`) and
 
 ## Install
 
-1. Download the disk image for your Mac: **[Apple silicon (M1 and later)](https://github.com/allen1versonfr/ClipRadar_macOs/releases/latest/download/ClipRadar-macOS-arm64.dmg)** or **[Intel](https://github.com/allen1versonfr/ClipRadar_macOs/releases/latest/download/ClipRadar-macOS-x86_64.dmg)**. Not sure? Apple menu › About This Mac: "Chip: Apple M…" is Apple silicon, "Processor: Intel" is Intel.
+1. Download the disk image: **[Apple silicon (M1 and later)](https://github.com/allen1versonfr/ClipRadar_macOs/releases/latest/download/ClipRadar-macOS-arm64.dmg)**. Clip Radar is for Apple silicon Macs only.
 2. Open it and drag **Clip Radar** to **Applications**.
 3. Open Clip Radar from Applications. FFmpeg, yt-dlp and TwitchDownloaderCLI come inside the app.
 
 > [!NOTE]
 > The app isn't notarized by Apple yet, so the first time you open it macOS says it can't check it for malicious software. Open **System Settings › Privacy & Security**, scroll down and press **Open Anyway** next to Clip Radar. (On macOS 14 and earlier, Control-click the app in Applications and choose **Open**.) You only do this once.
 
-**Requirements:** macOS 11 Big Sur or later, on Apple silicon or Intel. Captions download a Whisper model (a few hundred MB) the first time you use them. TikTok upload automation needs Google Chrome, Microsoft Edge, Chromium or Brave.
+**Requirements:** macOS 11 Big Sur or later, on Apple silicon (M1 and later). Captions download a Whisper model (a few hundred MB) the first time you use them. TikTok upload automation needs Google Chrome, Microsoft Edge, Chromium or Brave.
 
 **Where things are:** clips and projects in `~/Movies/Clip Radar`; settings, downloaded tools, caption models and logs in `~/Library/Application Support/ClipRadar`.
 
@@ -123,7 +121,7 @@ Clip Radar gets each clip ready and you post it in **TikTok Studio**, TikTok's o
 | App window | Edge WebView2 | WebKit (pywebview's Cocoa backend) |
 | Download | `ClipRadar-Setup.exe` (Inno Setup) | `ClipRadar-macOS-<chip>.dmg`, one per chip |
 | Updates | runs the new installer silently | downloads `ClipRadar-macOS-<chip>.zip` from this repo's releases; after Clip Radar quits, a small script swaps in the new `Clip Radar.app` and opens it (`src/updater.py`) |
-| GPU rendering | NVENC, Quick Sync, AMF | VideoToolbox (`h264_videotoolbox`, `hevc_videotoolbox`; a bitrate mode for Intel Macs, which have no constant-quality mode), with x264/x265 as the fallback as before |
+| GPU rendering | NVENC, Quick Sync, AMF | VideoToolbox (`h264_videotoolbox`, `hevc_videotoolbox`), with x264/x265 as the fallback as before |
 | Whisper on the GPU | optional NVIDIA CUDA download | not offered: CTranslate2 has no Metal backend, so Whisper runs on the CPU (Apple silicon runs it quickly) |
 | Helper tools | gyan.dev FFmpeg, `yt-dlp.exe`, TwitchDownloader Windows build | Martin Riedl's signed FFmpeg builds (evermeet.cx as a fallback), `yt-dlp_macos`, TwitchDownloader's MacOS / MacOSArm64 build; Homebrew's `/opt/homebrew/bin` and `/usr/local/bin` are searched too, since apps opened from Finder don't get your shell's `PATH` |
 | Saved sign-ins (Twitch, GitHub token) | DPAPI | encrypted with a random key kept in your login Keychain (service "Clip Radar"); falls back to the old base64 format only if the Keychain can't be used (`src/secret.py`) |
@@ -150,7 +148,7 @@ scripts/run.sh           # run from source in its own window (add --browser for 
 scripts/build_app.sh     # build dist/Clip Radar.app, plus the .dmg and .zip a release carries
 ```
 
-`build_app.sh` builds for the Mac it runs on (`arm64` or `x86_64`). It signs the app ad hoc; set `CODESIGN_IDENTITY` to a "Developer ID Application" identity to sign it properly, and `NOTARY_PROFILE` (from `xcrun notarytool store-credentials`) to notarize and staple the DMG.
+`build_app.sh` builds for the Mac it runs on. It signs the app ad hoc; set `CODESIGN_IDENTITY` to a "Developer ID Application" identity to sign it properly, and `NOTARY_PROFILE` (from `xcrun notarytool store-credentials`) to notarize and staple the DMG.
 
 ### Tests and releases
 
@@ -158,7 +156,7 @@ Every push runs `.github/workflows/build.yml` on GitHub's macOS runners:
 
 - lint and the unit tests (the same suites as the Windows version, plus the Mac paths: the process watcher in `tests/test_child_cleanup.py`, `lsof` in `tests/test_filelocks.py`, the Mac update asset in `tests/test_versions.py`);
 - the React UI's tests;
-- builds the app on Apple silicon (`macos-15`) and Intel (`macos-15-intel`), then runs the app's built-in self-test inside each build (`--selftest`: rendering, the encoder it picked, Whisper captions on speech made with `say`, auto titles, styled text placement, bleeping) and checks that the app starts and answers.
+- builds the app on Apple silicon (`macos-15`), then runs the app's built-in self-test inside the build (`--selftest`: rendering, the encoder it picked, Whisper captions on speech made with `say`, auto titles, styled text placement, bleeping) and checks that the app starts and answers.
 
 When `src/version.py` names a version with no release yet, a push to `main` publishes `vX.Y.Z` with both DMGs and zips and that version's notes from [CHANGELOG.md](CHANGELOG.md). Code signing and notarization switch on when these repository secrets exist: `MACOS_CERT_P12_BASE64` and `MACOS_CERT_PASSWORD` (a Developer ID Application certificate), and optionally `MACOS_NOTARY_APPLE_ID`, `MACOS_NOTARY_PASSWORD` (an app-specific password) and `MACOS_NOTARY_TEAM_ID`.
 

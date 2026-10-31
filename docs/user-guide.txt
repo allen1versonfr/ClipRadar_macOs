@@ -5,10 +5,9 @@ lets you review and trim them, then renders 1080x1920 MP4s with captions.
 Everything runs on your own Mac.
 
 INSTALL
-  Download the disk image for your Mac from the Releases page of
+  Download the disk image from the Releases page of
   github.com/allen1versonfr/ClipRadar_macOs:
     ClipRadar-macOS-arm64.dmg    Apple silicon (M1 and later)
-    ClipRadar-macOS-x86_64.dmg   Intel Macs
   Open it and drag Clip Radar to Applications. macOS 11 (Big Sur) or later.
   The first time you open it, macOS may say it can't check the app for
   malicious software (the app isn't notarized yet): open System Settings >

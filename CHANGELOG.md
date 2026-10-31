@@ -8,11 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [4.36.0] - 2026-10-30
 
-The first macOS release: Clip Radar 4.36.0, ported to the Mac, for Apple silicon and Intel.
+The first macOS release: Clip Radar 4.36.0, ported to the Mac, for Apple silicon.
 
 ### Added
-- **Clip Radar.app** in a drag-to-Applications disk image, one per chip (`ClipRadar-macOS-arm64.dmg`, `ClipRadar-macOS-x86_64.dmg`), with FFmpeg, yt-dlp and TwitchDownloaderCLI inside. macOS 11 or later.
-- **Rendering on the Mac's video engine (VideoToolbox)** for H.264 and H.265, with the CPU as the fallback as on Windows. Intel Macs use a bitrate mode, since their VideoToolbox has no constant-quality mode.
+- **Clip Radar.app** in a drag-to-Applications disk image (`ClipRadar-macOS-arm64.dmg`), with FFmpeg, yt-dlp and TwitchDownloaderCLI inside. macOS 11 or later.
+- **Rendering on the Mac's video engine (VideoToolbox)** for H.264 and H.265, with the CPU as the fallback as on Windows.
 - **Updates in the app**: a new version is downloaded from this repository's releases, and after Clip Radar quits, the new Clip Radar.app replaces the old one and opens. It needs Clip Radar to be in a folder you can write to, like Applications.
 - **Tool downloads for the Mac** (Settings › Downloads and tools): FFmpeg from Martin Riedl's signed builds (evermeet.cx as a fallback), yt-dlp's macOS build and TwitchDownloader's MacOS build, each for your chip. FFmpeg and yt-dlp installed with Homebrew are found too, even though apps opened from Finder don't see Homebrew's folder on the `PATH`.
 - **Saved sign-ins are encrypted** with a random key kept in your login Keychain.
