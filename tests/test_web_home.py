@@ -98,8 +98,10 @@ with sync_playwright() as pw:
     page.click("[data-testid=find-clips]")
     page.wait_for_selector("[data-testid=vod-job]", timeout=15000)
     check("Find clips shows its progress", True)
-    page.wait_for_selector("[data-testid=running-now] [data-testid=source-row]", timeout=15000)
-    check("and Running now lists the video", "home_test" in page.locator("[data-testid=running-now]").inner_text())
+    # or Review has opened already: a short video can finish before Running now's next poll
+    page.wait_for_function("document.querySelector('[data-testid=running-now]')?.innerText.includes('home_test')"
+                           " || location.hash.startsWith('#review/')", timeout=15000)
+    check("and Running now lists the video", True)
 
     # ready: this UI's Review opens with its clips
     page.wait_for_function("location.hash.startsWith('#review/')", timeout=180000)
